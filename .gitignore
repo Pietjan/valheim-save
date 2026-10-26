@@ -1,0 +1,5 @@
+/bin/
+
+# A server's item dump and the game's text table, the inputs of `make items`.
+# The output, internal/character/items.tsv, is committed.
+/scratch/
