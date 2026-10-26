@@ -1,0 +1,53 @@
+# A tag v* becomes a GitHub release carrying the Windows binary, zipped with
+# the README, and the Linux one. Run by hand (workflow_dispatch) it only
+# builds and keeps the files as a workflow artifact, for trying a build
+# without cutting a release.
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go test -race ./...
+      - name: build
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          version="${GITHUB_REF_NAME}"
+          mkdir -p dist
+          GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/valheim-save.exe ./cmd/valheim-save
+          GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/valheim-save ./cmd/valheim-save
+          cp README.md dist/
+          (cd dist && zip -q "valheim-save-${version}-windows-amd64.zip" valheim-save.exe README.md)
+          (cd dist && tar -czf "valheim-save-${version}-linux-amd64.tar.gz" valheim-save README.md)
+          (cd dist && sha256sum valheim-save-*.zip valheim-save-*.tar.gz > checksums.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: valheim-save-${{ github.ref_name }}
+          path: |
+            dist/valheim-save.exe
+            dist/valheim-save
+      - name: release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes \
+            dist/valheim-save-*.zip dist/valheim-save-*.tar.gz dist/checksums.txt
